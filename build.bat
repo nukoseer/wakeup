@@ -27,4 +27,6 @@ if %debug%==yes (
 
 %compiler% %common_compiler_flags% ..\wakeup.c /link %common_linker_flags% /out:wakeup.exe
 
+mt -nologo -manifest ..\wakeup.manifest -outputresource:wakeup.exe;1
+
 popd
