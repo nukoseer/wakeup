@@ -12,7 +12,7 @@
 #define ID_REFRESH        (2)
 #define ID_CANCEL         (3)
 
-#define ID_PROCESS        (100)
+#define ID_WINDOW        (100)
 #define ID_PERIOD         (200)
 #define ID_SHORTCUT_MENU  (300)
 
@@ -113,11 +113,11 @@ static BOOL CALLBACK wakeup_dialog__enum_window_proc(HWND window, LPARAM lparam)
     return TRUE;
 }
 
-static void wakeup_dialog__set_process_list(HWND window)
+static void wakeup_dialog__set_window_list(HWND window)
 {
     for (unsigned int i = 0; i < window_info_count; ++i)
     {
-        SendDlgItemMessageW(window, ID_PROCESS, CB_DELETESTRING, 0, (LPARAM)window_infos[i].name);
+        SendDlgItemMessageW(window, ID_WINDOW, CB_DELETESTRING, 0, (LPARAM)window_infos[i].name);
     }
 
     memset(window_infos, 0, sizeof(window_infos));
@@ -127,10 +127,10 @@ static void wakeup_dialog__set_process_list(HWND window)
     
     for (unsigned int i = 0; i < window_info_count; ++i)
     {
-        SendDlgItemMessageW(window, ID_PROCESS, CB_ADDSTRING, 0, (LPARAM)window_infos[i].name);
+        SendDlgItemMessageW(window, ID_WINDOW, CB_ADDSTRING, 0, (LPARAM)window_infos[i].name);
     }
 
-    SendDlgItemMessageW(window, ID_PROCESS, CB_SETCURSEL, 0, 0);
+    SendDlgItemMessageW(window, ID_WINDOW, CB_SETCURSEL, 0, 0);
 }
 
 static LRESULT CALLBACK wakeup_dialog__proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
@@ -144,13 +144,13 @@ static LRESULT CALLBACK wakeup_dialog__proc(HWND window, UINT message, WPARAM wp
         dialog_config->period = GetPrivateProfileIntW(WAKEUP_DIALOG_INI_SETTINGS_SECTION, WAKEUP_DIALOG_INI_PERIOD_KEY, 5, global_ini_path);
         SetDlgItemInt(window, ID_PERIOD, dialog_config->period, FALSE);
 
-        wakeup_dialog__set_process_list(window);
+        wakeup_dialog__set_window_list(window);
                 
         SendMessage(window, WM_SETICON, ICON_BIG, (LPARAM)global_icon);
 
         if (global_started)
         {
-            EnableWindow(GetDlgItem(window, ID_PROCESS), 0);
+            EnableWindow(GetDlgItem(window, ID_WINDOW), 0);
             EnableWindow(GetDlgItem(window, ID_PERIOD), 0);
             EnableWindow(GetDlgItem(window, ID_REFRESH), 0);
         }
@@ -183,7 +183,7 @@ static LRESULT CALLBACK wakeup_dialog__proc(HWND window, UINT message, WPARAM wp
                 
                 global_started = 1;
 
-                EnableWindow(GetDlgItem(window, ID_PROCESS), 0);
+                EnableWindow(GetDlgItem(window, ID_WINDOW), 0);
                 EnableWindow(GetDlgItem(window, ID_PERIOD), 0);
                 EnableWindow(GetDlgItem(window, ID_REFRESH), 0);
                 
@@ -198,7 +198,7 @@ static LRESULT CALLBACK wakeup_dialog__proc(HWND window, UINT message, WPARAM wp
             {
                 global_started = 0;
 
-                EnableWindow(GetDlgItem(window, ID_PROCESS), 1);
+                EnableWindow(GetDlgItem(window, ID_WINDOW), 1);
                 EnableWindow(GetDlgItem(window, ID_PERIOD), 1);
                 EnableWindow(GetDlgItem(window, ID_REFRESH), 1);
                 wakeup_stop_timer();
@@ -210,7 +210,7 @@ static LRESULT CALLBACK wakeup_dialog__proc(HWND window, UINT message, WPARAM wp
         {
             if (!global_started)
             {
-                wakeup_dialog__set_process_list(window);
+                wakeup_dialog__set_window_list(window);
 
                 return TRUE;
             }
@@ -220,9 +220,9 @@ static LRESULT CALLBACK wakeup_dialog__proc(HWND window, UINT message, WPARAM wp
             EndDialog(window, 0);
             return FALSE;
         }
-        else if (control == ID_PROCESS && HIWORD(wparam) == CBN_SELCHANGE)
+        else if (control == ID_WINDOW && HIWORD(wparam) == CBN_SELCHANGE)
 		{
-			LRESULT index = SendDlgItemMessageW(window, ID_PROCESS, CB_GETCURSEL, 0, 0);
+			LRESULT index = SendDlgItemMessageW(window, ID_WINDOW, CB_GETCURSEL, 0, 0);
 
             global_selected_window_index = (unsigned int)index;
 
@@ -479,7 +479,7 @@ LRESULT wakeup_dialog_show(WakeupDialogConfig* dialog_config)
 				.rect = { 0, 0, COL_WIDTH, ROW_HEIGHT },
                 .items = 
                 {
-                    { "Processes", ID_PROCESS, ITEM_COMBOBOX | ITEM_LABEL, 64 },
+                    { "Windows", ID_WINDOW, ITEM_COMBOBOX | ITEM_LABEL, 64 },
                     { "Period (sec)", ID_PERIOD, ITEM_NUMBER | ITEM_LABEL, 64 },
                     { NULL },
                 },
