@@ -1,8 +1,7 @@
 // NOTE: Source: https://github.com/mmozeiko/wcap/blob/main/wcap_config.c
 
 #define COL_WIDTH    (240)
-#define COL2_WIDTH   (26)
-#define ROW_HEIGHT   (2 * ITEM_HEIGHT)
+#define ROW_HEIGHT   ((2 + 1) * ITEM_HEIGHT)
 #define ROW2_HEIGHT  (ITEM_HEIGHT)
 #define BUTTON_WIDTH (50)
 #define ITEM_HEIGHT  (14)
@@ -10,7 +9,8 @@
 
 #define ID_START          (0)
 #define ID_STOP           (1)
-#define ID_CANCEL         (2)
+#define ID_REFRESH        (2)
+#define ID_CANCEL         (3)
 
 #define ID_PROCESS        (100)
 #define ID_PERIOD         (200)
@@ -29,6 +29,8 @@
 #define CONTROL_EDIT      (0x0081)
 #define CONTROL_STATIC    (0x0082)
 #define CONTROL_COMBOBOX  (0x0085)
+
+#define WAKEUP_DIALOG_INI_SETTINGS_SECTION  (L"settings")
 
 #define WAKEUP_DIALOG_INI_PERIOD_KEY        (L"period")
 #define WAKEUP_DIALOG_INI_SHORTCUT_MENU_KEY (L"menu-shortcut")
@@ -65,10 +67,10 @@ typedef struct
 } WakeupDialogLayout;
 
 static HWND global_dialog_window;
-// static WCHAR* global_ini_path;
-// static HICON global_icon;
+static WCHAR* global_ini_path;
+static HICON global_icon;
 static int global_started;
-static int global_value_type;
+static int global_selected_window_index;
 static const char global_check_mark[] = "\x20\x00\x20\x00\x20\x00\x20\x00\x13\x27\x00\x00"; // NOTE: Four space and check mark for easy printing.
 struct {
 	WNDPROC window_proc;
@@ -82,26 +84,53 @@ typedef struct
     HWND window;
 } WakeupWindowInfo;
 
-static WakeupWindowInfo window_infos[512] = { 0 };
+static WakeupWindowInfo window_infos[32] = { 0 };
 static unsigned int window_info_count = 0;
 
-static BOOL CALLBACK enum_windows_proc(HWND window, LPARAM lparam)
+static BOOL CALLBACK wakeup_dialog__enum_window_proc(HWND window, LPARAM lparam)
 {
-    WCHAR buffer[256] = { 0 };
-
     (void)lparam;
-    
-    GetWindowTextW(window, buffer, sizeof(buffer));
 
-    if (window && buffer[0])
+    if (window_info_count >= ARRAY_COUNT(window_infos))
     {
-        WakeupWindowInfo* window_info = window_infos + window_info_count++;
+        return FALSE;
+    }
+    
+    if (window && IsWindowVisible(window))
+    {
+        WCHAR buffer[256] = { 0 };
 
-        memcpy(window_info->name, buffer, sizeof(buffer));
-        window_info->window = window;
+        GetWindowTextW(window, buffer, sizeof(buffer));
+
+        if (buffer[0])
+        {
+            WakeupWindowInfo* window_info = window_infos + window_info_count++;
+            memcpy(window_info->name, buffer, sizeof(buffer));
+            window_info->window = window;
+        }
     }
 
     return TRUE;
+}
+
+static void wakeup_dialog__set_process_list(HWND window)
+{
+    for (unsigned int i = 0; i < window_info_count; ++i)
+    {
+        SendDlgItemMessageW(window, ID_PROCESS, CB_DELETESTRING, 0, (LPARAM)window_infos[i].name);
+    }
+
+    memset(window_infos, 0, sizeof(window_infos));
+    window_info_count = 0;
+
+    EnumWindows(wakeup_dialog__enum_window_proc, 0);
+    
+    for (unsigned int i = 0; i < window_info_count; ++i)
+    {
+        SendDlgItemMessageW(window, ID_PROCESS, CB_ADDSTRING, 0, (LPARAM)window_infos[i].name);
+    }
+
+    SendDlgItemMessageW(window, ID_PROCESS, CB_SETCURSEL, 0, 0);
 }
 
 static LRESULT CALLBACK wakeup_dialog__proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
@@ -111,27 +140,19 @@ static LRESULT CALLBACK wakeup_dialog__proc(HWND window, UINT message, WPARAM wp
         WakeupDialogConfig* dialog_config = (WakeupDialogConfig*)lparam;
 
         SetWindowLongPtrW(window, GWLP_USERDATA, (LONG_PTR)dialog_config);
+        
+        dialog_config->period = GetPrivateProfileIntW(WAKEUP_DIALOG_INI_SETTINGS_SECTION, WAKEUP_DIALOG_INI_PERIOD_KEY, 5, global_ini_path);
+        SetDlgItemInt(window, ID_PERIOD, dialog_config->period, FALSE);
 
-        EnumWindows(enum_windows_proc, 0);
+        wakeup_dialog__set_process_list(window);
                 
-        // SendMessage(window, WM_SETICON, ICON_BIG, (LPARAM)global_icon);
+        SendMessage(window, WM_SETICON, ICON_BIG, (LPARAM)global_icon);
 
-        for (unsigned int i = 0; i < window_info_count; ++i)
-        {
-            SendDlgItemMessageW(window, ID_PROCESS, CB_ADDSTRING, 0, (LPARAM)window_infos[i].name);
-        }
-
-        // SendDlgItemMessageW(window, ID_PROCESS, CB_ADDSTRING, 0, (LPARAM)L"A");
-		// SendDlgItemMessageW(window, ID_PROCESS, CB_ADDSTRING, 0, (LPARAM)L"B");
-        SendDlgItemMessageW(window, ID_PROCESS, CB_SETCURSEL, 0, 0);
-        
-        // HWND control = GetDlgItem(window, ID_PROCESS);
-        // ComboBox_SetCurSel(control, 0);
-        
         if (global_started)
         {
-            // EnableWindow(GetDlgItem(window, ID_PERIOD), 0);
-            // EnableWindow(GetDlgItem(window, ID_PROCESS), 0);
+            EnableWindow(GetDlgItem(window, ID_PROCESS), 0);
+            EnableWindow(GetDlgItem(window, ID_PERIOD), 0);
+            EnableWindow(GetDlgItem(window, ID_REFRESH), 0);
         }
 
         SendMessageW(window, WM_NEXTDLGCTL, (WPARAM)GetDlgItem(window, ID_START), TRUE);
@@ -156,13 +177,17 @@ static LRESULT CALLBACK wakeup_dialog__proc(HWND window, UINT message, WPARAM wp
         {
             if (!global_started)
             {
-                // WakeupDialogConfig* dialog_config = (WakeupDialogConfig*)GetWindowLongPtrW(window, GWLP_USERDATA);
-
+                WakeupDialogConfig* dialog_config = (WakeupDialogConfig*)GetWindowLongPtrW(window, GWLP_USERDATA);
+                
+                dialog_config->selected_window = window_infos[global_selected_window_index].window;
+                
                 global_started = 1;
 
-                // unsigned int period = 1000;
-                // EnableWindow(GetDlgItem(window, ID_PERIOD), 0);
-                // wakeup_set_timer(period);
+                EnableWindow(GetDlgItem(window, ID_PROCESS), 0);
+                EnableWindow(GetDlgItem(window, ID_PERIOD), 0);
+                EnableWindow(GetDlgItem(window, ID_REFRESH), 0);
+                
+                wakeup_set_timer(dialog_config->period);
 
                 return TRUE;
             }
@@ -171,12 +196,21 @@ static LRESULT CALLBACK wakeup_dialog__proc(HWND window, UINT message, WPARAM wp
         {
             if (global_started)
             {
-                // WakeupDialogConfig* dialog_config = (WakeupDialogConfig*)GetWindowLongPtrW(window, GWLP_USERDATA);
-
                 global_started = 0;
 
-                // EnableWindow(GetDlgItem(window, ID_PERIOD), 1);
-                // wakeup_stop_timer();
+                EnableWindow(GetDlgItem(window, ID_PROCESS), 1);
+                EnableWindow(GetDlgItem(window, ID_PERIOD), 1);
+                EnableWindow(GetDlgItem(window, ID_REFRESH), 1);
+                wakeup_stop_timer();
+
+                return TRUE;
+            }
+        }
+        else if (control == ID_REFRESH)
+        {
+            if (!global_started)
+            {
+                wakeup_dialog__set_process_list(window);
 
                 return TRUE;
             }
@@ -186,69 +220,32 @@ static LRESULT CALLBACK wakeup_dialog__proc(HWND window, UINT message, WPARAM wp
             EndDialog(window, 0);
             return FALSE;
         }
-        // else if (control == ID_PROCESS && HIWORD(wparam) == CBN_SELCHANGE)
-		// {
-		// 	LRESULT index = SendDlgItemMessageW(window, ID_PROCESS, CB_GETCURSEL, 0, 0);
-        //     global_value_type = (unsigned int)index;
-		// 	return TRUE;
-		// }
-        // else if (control == ID_PERIOD)
-        // {
-        //     WCHAR period_string[3] = { 0 };
+        else if (control == ID_PROCESS && HIWORD(wparam) == CBN_SELCHANGE)
+		{
+			LRESULT index = SendDlgItemMessageW(window, ID_PROCESS, CB_GETCURSEL, 0, 0);
 
-        //     UINT period = GetDlgItemInt(window, ID_PERIOD, 0, FALSE);
+            global_selected_window_index = (unsigned int)index;
 
-        //     if (period > 99)
-        //     {
-        //         period = 99;
-        //         SetDlgItemInt(window, ID_PERIOD, period, FALSE);
-        //     }
-        // }
-        // else if (control == ID_SHORTCUT_MENU && HIWORD(wparam) == BN_CLICKED)
-		// {
-		// 	if (global_config_shortcut.control == 0)
-		// 	{
-        //         WakeupDialogConfig* dialog_config = (WakeupDialogConfig*)GetWindowLongPtrW(window, GWLP_USERDATA);
+			return TRUE;
+		}
+        else if (control == ID_PERIOD)
+        {
+            WakeupDialogConfig* dialog_config = (WakeupDialogConfig*)GetWindowLongPtrW(window, GWLP_USERDATA);
+            WCHAR period_string[8] = { 0 };
 
-		// 		SetDlgItemTextW(window, control, L"Press new shortcut");
+            dialog_config->period = GetDlgItemInt(window, ID_PERIOD, 0, FALSE);
 
-		// 		global_config_shortcut.control = control;
-		// 		global_config_shortcut.dialog_config = dialog_config;
+            if (dialog_config->period > 86400)
+            {
+                dialog_config->period = 86400;
+                SetDlgItemInt(window, ID_PERIOD, dialog_config->period, FALSE);
+            }
 
-		// 		HWND control_window = GetDlgItem(window, control);
-		// 		global_config_shortcut.window_proc = (WNDPROC)GetWindowLongPtrW(control_window, GWLP_WNDPROC);
-		// 		// SetWindowLongPtrW(control_window, GWLP_WNDPROC, (LONG_PTR)&wakeup_dialog__shortcut_proc);
-		// 		// wakeup_disable_hotkeys();
-		// 	}
-		// }
+            _snwprintf(period_string, ARRAY_COUNT(period_string), L"%u", (unsigned int)dialog_config->period);
+            WritePrivateProfileStringW(WAKEUP_DIALOG_INI_SETTINGS_SECTION, WAKEUP_DIALOG_INI_PERIOD_KEY, period_string, global_ini_path);
+        }
 
         return TRUE;
-    }
-    else if (message == WM_TIMER)
-	{
-        // if (global_started)
-        // {
-        //     WakeupDialogConfig* dialog_config = (WakeupDialogConfig*)GetWindowLongPtrW(window, GWLP_USERDATA);
-
-        //     for (unsigned int i = 0; i < MAX_ITEMS; ++i)
-        //     {
-        //         if (*dialog_config->processes[i])
-        //         {
-        //             if (dialog_config->dones[i])
-        //             {
-        //                 SetDlgItemTextW(window, ID_SET + i, (WCHAR*)global_check_mark);
-        //             }
-        //             else
-        //             {
-        //                 SetDlgItemTextW(window, ID_SET + i, L"");
-        //             }
-        //         }
-        //         else
-        //         {
-        //             break;
-        //         }
-        //     }
-        // }
     }
 
     return FALSE;
@@ -328,9 +325,9 @@ static void wakeup__do_dialog_layout(const WakeupDialogLayout* dialog_layout, BY
 	DWORD font_chars = MultiByteToWideChar(CP_UTF8, 0, dialog_layout->font, -1, (WCHAR*)buffer, 128);
 	buffer += font_chars * sizeof(WCHAR);
 
-	int item_count = 3;
+	int item_count = 4;
 
-	int button_x = PADDING + COL_WIDTH + PADDING - 3 * (PADDING + BUTTON_WIDTH);
+	int button_x = PADDING + COL_WIDTH + PADDING - 4 * (PADDING + BUTTON_WIDTH);
 	int button_y = PADDING + ROW_HEIGHT + PADDING + ROW2_HEIGHT + PADDING;
 
 	DLGITEMTEMPLATE* start_buffer = wakeup_dialog__align(buffer, sizeof(DWORD));
@@ -343,6 +340,11 @@ static void wakeup__do_dialog_layout(const WakeupDialogLayout* dialog_layout, BY
 	button_x += BUTTON_WIDTH + PADDING;
     (void)stop_buffer;
 
+    DLGITEMTEMPLATE* refresh_buffer = wakeup_dialog__align(buffer, sizeof(DWORD));
+	buffer = wakeup__do_dialog_item(buffer, "Refresh", ID_REFRESH, CONTROL_BUTTON, WS_TABSTOP | BS_PUSHBUTTON, button_x, button_y, BUTTON_WIDTH, ITEM_HEIGHT);
+	button_x += BUTTON_WIDTH + PADDING;
+    (void)refresh_buffer;
+        
 	DLGITEMTEMPLATE* cancel_buffer = wakeup_dialog__align(buffer, sizeof(DWORD));
 	buffer = wakeup__do_dialog_item(buffer, "Cancel", ID_CANCEL, CONTROL_BUTTON, WS_TABSTOP | BS_PUSHBUTTON, button_x, button_y, BUTTON_WIDTH, ITEM_HEIGHT);
 	button_x += BUTTON_WIDTH + PADDING;
@@ -438,7 +440,7 @@ static void wakeup__do_dialog_layout(const WakeupDialogLayout* dialog_layout, BY
 
             if (has_combobox)
 			{
-				buffer = wakeup__do_dialog_item(buffer, "", (WORD)item_id, (WORD)CONTROL_COMBOBOX, WS_VSCROLL | WS_TABSTOP | CBS_DROPDOWNLIST | CBS_HASSTRINGS, item_x, y, item_w, ITEM_HEIGHT);
+				buffer = wakeup__do_dialog_item(buffer, "", (WORD)item_id, (WORD)CONTROL_COMBOBOX, WS_HSCROLL | WS_VSCROLL | WS_TABSTOP | CBS_DROPDOWNLIST | CBS_HASSTRINGS, item_x, y, item_w, ITEM_HEIGHT);
 				item_count++;
 			}
 
@@ -467,7 +469,7 @@ LRESULT wakeup_dialog_show(WakeupDialogConfig* dialog_config)
 
 	WakeupDialogLayout dialog_layout = (WakeupDialogLayout)
 	{
-		.title = "Wakeup",
+		.title = "wakeup",
 		.font = "Segoe UI",
 		.font_size = 9,
 		.groups = (WakeupDialogGroup[])
@@ -477,7 +479,7 @@ LRESULT wakeup_dialog_show(WakeupDialogConfig* dialog_config)
 				.rect = { 0, 0, COL_WIDTH, ROW_HEIGHT },
                 .items = 
                 {
-                    { "Process list", ID_PROCESS, ITEM_COMBOBOX | ITEM_LABEL, 64 },
+                    { "Processes", ID_PROCESS, ITEM_COMBOBOX | ITEM_LABEL, 64 },
                     { "Period (sec)", ID_PERIOD, ITEM_NUMBER | ITEM_LABEL, 64 },
                     { NULL },
                 },
@@ -492,3 +494,13 @@ LRESULT wakeup_dialog_show(WakeupDialogConfig* dialog_config)
 	return DialogBoxIndirectParamW(GetModuleHandleW(NULL), (LPCDLGTEMPLATEW)buffer, NULL, wakeup_dialog__proc, (LPARAM)dialog_config);
 }
 
+void wakeup_dialog_init(WakeupDialogConfig* dialog_config, WCHAR* ini_path, HICON icon)
+{
+    global_ini_path = ini_path;
+    global_icon = icon;
+
+    dialog_config->menu_shortcut = (DWORD)HOT_KEY('W', MOD_ALT);
+    wakeup_enable_hotkeys();
+
+    wakeup_dialog_show(dialog_config);
+}

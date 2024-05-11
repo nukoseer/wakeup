@@ -2,27 +2,6 @@
 #include "wakeup_dialog.h"
 #include "wakeup_dialog.c"
 
-static HWND found_window;
-
-// static BOOL CALLBACK enum_windows_proc(HWND window, LPARAM lparam)
-// {
-//     const char* process_name = (const char*)lparam;
-//     char buffer[256] = { 0 };
-//     GetWindowText(window, buffer, sizeof(buffer));
-
-//     if (buffer[0] && strstr(buffer, process_name))
-//     {
-//         found_window = window;
-//         // LRESULT result = SendMessage(window, WM_CLOSE, 0, 0);
-//         fprintf(stderr, "buffer: %s\n", buffer);
-//         return FALSE;
-//         // return FALSE;
-
-//     }
-
-//     return TRUE;
-// }
-
 #define WAKEUP_NAME                  (L"wakeup")
 #define WAKEUP_URL                   (L"https://github.com/nukoseer/wakeup")
 #define WAKEUP_INI                   (L"wakeup.ini")
@@ -36,7 +15,6 @@ static HWND found_window;
 typedef struct
 {
     HWND window_handle;
-    HWND found_window_handle;
     HANDLE timer_handle;
     WCHAR ini_path[MAX_PATH];
     HICON icon;
@@ -203,7 +181,10 @@ static LRESULT CALLBACK wakeup__window_proc(HWND window_handle, UINT message, WP
 
 static LRESULT wakeup__send_activate_message(HWND window_handle)
 {
-    LRESULT result = SendMessage(window_handle, WM_ACTIVATE, (WPARAM)WA_ACTIVE, (LPARAM)0);
+    static WPARAM wparam = WA_ACTIVE;
+
+    LRESULT result = SendMessage(window_handle, WM_ACTIVATE, (WPARAM)wparam, (LPARAM)0);
+    // wparam = wparam == WA_ACTIVE ? WA_INACTIVE : WA_ACTIVE;
 
     return result;
 }
@@ -219,7 +200,7 @@ static DWORD WINAPI wakeup__timer_thread_proc(LPVOID parameter)
 
         if (wait == WAIT_OBJECT_0)
         {
-            wakeup__send_activate_message(wakeup->found_window_handle);
+            wakeup__send_activate_message(wakeup->dialog_config.selected_window);
         }
     }
 
@@ -244,11 +225,6 @@ void wakeup_set_timer(int seconds)
 void wakeup_stop_timer(void)
 {
     CancelWaitableTimer(global_wakeup.timer_handle);
-}
-
-void wakeup_disable_hotkeys(void)
-{
-	UnregisterHotKey(global_wakeup.window_handle, HOT_MENU);
 }
 
 BOOL wakeup_enable_hotkeys(void)
@@ -304,11 +280,8 @@ void WinMainCRTStartup(void)
     PathRemoveFileSpecW(exe_path);
     PathCombineW(global_wakeup.ini_path, exe_path, WAKEUP_INI);
 
-    // CoInitializeEx(0, COINIT_MULTITHREADED);
-    // CoInitializeSecurity(0, -1, 0, 0, RPC_C_AUTHN_LEVEL_PKT_PRIVACY, RPC_C_IMP_LEVEL_IMPERSONATE, 0, 0, 0);
-
-    // wakeup__create_shortcut_link();
-    wakeup_dialog_show(&global_wakeup.dialog_config);
+    wakeup__create_shortcut_link();
+    wakeup_dialog_init(&global_wakeup.dialog_config, global_wakeup.ini_path, global_wakeup.icon);
 
     for (;;)
 	{
@@ -325,115 +298,3 @@ void WinMainCRTStartup(void)
         DispatchMessageW(&message);
 	}
 }
-
-// #ifdef _DEBUG
-// int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int n_show_cmd)
-// {
-//     (void)instance, (void)prev_instance, (void)cmd_line, (void)n_show_cmd;
-// #else
-// void WinMainCRTStartup(void)
-// {
-// #endif
-
-//     // WNDCLASSEX window_class =
-// 	// {
-// 	// 	.cbSize = sizeof(window_class),
-// 	// 	.lpfnWndProc = &window_proc,
-// 	// 	.hInstance = GetModuleHandle(0),
-// 	// 	.lpszClassName = "wakeup",
-//     // };
-    
-//     // ATOM atom = RegisterClassEx(&window_class);
-// 	// ASSERT(atom);
-
-// 	// RegisterWindowMessage("wakeup");
-
-//     // HWND wakeup_window = CreateWindowExA(0, window_class.lpszClassName, window_class.lpszClassName, WS_POPUP,
-//     //                                      CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-//     //                                      NULL, NULL, window_class.hInstance, NULL);
-//     // (void)wakeup_window;
-
-
-//     // unsigned int process_id = get_process_id("Teams.exe");
-//     // fprintf(stderr, "process_id: %u\n", process_id);
-
-//     // HANDLE process_handle = OpenProcess(PROCESS_ALL_ACCESS, 0, process_id);
-//     // fprintf(stderr, "process_handle: %p\n", process_handle);
-
-//     // HWND process_window = FindWindowA(0, "");
-//     // fprintf(stderr, "process_window: %p\n", process_window);
-
-//     // char buffer[256] = { 0 };
-//     // GetWindowText(process_window, buffer, sizeof(buffer));
-//     // fprintf(stderr, "buffer: %s\n", buffer);
-     
-//     // LRESULT result = SendMessage(process_window, WM_CLOSE, 0, 0);
-//     // fprintf(stderr, "result: %u\n", (unsigned int)result);
-
-//     EnumWindows(enum_windows_proc, (LPARAM)"Microsoft Teams classic");
-
-//     if (found_window)
-//     {
-//         HANDLE timer_handle = CreateWaitableTimer(0, 0, 0);
-//         LARGE_INTEGER due_time = { 0 };
-//         BOOL is_timer_set = 0;
-//         FILETIME file_time = { 0 };
-
-//         GetSystemTimeAsFileTime(&file_time);
-
-//         due_time.LowPart = file_time.dwLowDateTime;
-//         due_time.HighPart = file_time.dwHighDateTime;
-
-//         is_timer_set = SetWaitableTimer(timer_handle, &due_time, 10 * 1000, 0, 0, 0);
-//         ASSERT(is_timer_set);
-//         fprintf(stderr, "is_timer_set: %u\n", is_timer_set);
-
-//         // BOOL pv_param = TRUE;
-//         // BOOL system_result = SystemParametersInfoA(SPI_SETACTIVEWINDOWTRACKING, 0, &pv_param, SPIF_SENDCHANGE);
-//         // fprintf(stderr, "system_result: %u, pv_param: %u\n", system_result, pv_param);
-
-
-//         WPARAM wparam = WA_ACTIVE;
-//         // WPARAM wparam = (WPARAM)(DWORD)((1 << 16) | WA_ACTIVE);       
-//         for (;;)
-//         {
-//             DWORD wait = WaitForSingleObject(timer_handle, INFINITE);
-
-//             if (wait == WAIT_OBJECT_0)
-//             {
-//                 LRESULT result = SendMessage(found_window, WM_ACTIVATE, (WPARAM)wparam, (LPARAM)0);
-//                 // wparam = wparam == WA_ACTIVE ? WA_INACTIVE : WA_ACTIVE;
-
-//                 // TRACKMOUSEEVENT track_mouse_event = {
-//                 //     .cbSize = sizeof(track_mouse_event),
-//                 //     .dwFlags = TME_HOVER,
-//                 //     .hwndTrack = found_window,
-//                 //     .dwHoverTime = 2000,
-//                 // };
-
-//                 // BOOL track_result = TrackMouseEvent(&track_mouse_event);
-//                 // fprintf(stderr, "track_result: %u\n", track_result);
-                
-//                 // LRESULT result = SendMessage(found_window, WM_MOUSEHOVER, (WPARAM)0, (LPARAM)0);
-
-//                 fprintf(stderr, "result: %u, wparam: %u\n", (unsigned int)result, (unsigned int)wparam);
-//             }
-//         }
-
-//         // SetTimer(wakeup_window, 1, 1000, 0);
-//         // for (;;)
-//         // {
-//         //     MSG message;
-//         //     BOOL result = PeekMessageA(&message, NULL, 0, 0, PM_NOREMOVE);
-//         //     (void)result;
-//         //     // if (result == 0)
-//         //     // {
-//         //     //     ExitProcess(0);
-//         //     // }
-//         //     // ASSERT(result > 0);
-
-//         //     TranslateMessage(&message);
-//         //     DispatchMessage(&message);
-//         // }
-//     }
-// }

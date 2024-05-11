@@ -12,7 +12,7 @@ rem /wd4774 /wd4062 /wd4201
 
 set debug_linker_flags=/debug
 set release_linker_flags=/fixed /opt:icf /opt:ref libvcruntime.lib ucrt.lib
-set common_linker_flags=/incremental:no /SUBSYSTEM:WINDOWS
+set common_linker_flags=/incremental:no /SUBSYSTEM:WINDOWS /merge:_RDATA=.rdata
 
 set debug=no
 set compiler=cl
@@ -25,7 +25,8 @@ if %debug%==yes (
    set common_linker_flags=%common_linker_flags% %release_linker_flags%
 )
 
-%compiler% %common_compiler_flags% ..\wakeup.c /link %common_linker_flags% /out:wakeup.exe
+rc.exe /nologo ..\wakeup.rc
+%compiler% %common_compiler_flags% ..\wakeup.c /link ..\wakeup.res %common_linker_flags% /out:wakeup.exe
 
 mt -nologo -manifest ..\wakeup.manifest -outputresource:wakeup.exe;1
 

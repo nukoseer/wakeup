@@ -20,11 +20,12 @@
 
 #pragma comment(lib, "kernel32")
 #pragma comment(lib, "user32")
-#pragma comment (lib, "shell32")
+#pragma comment(lib, "shell32")
 #pragma comment(lib, "shlwapi")
-#pragma comment (lib, "ole32")
+#pragma comment(lib, "ole32")
+#pragma comment (lib, "runtimeobject")
 
-#define ARRAY_COUNT(x)      (sizeof(x) / sizeof(*(x)))
+#define ARRAY_COUNT(x) (sizeof(x) / sizeof(*(x)))
 
 #ifdef _DEBUG
 #define ASSERT(x) do { if (!(x)) { *(volatile int*)0; } } while (0)
@@ -33,10 +34,10 @@
 #endif
 
 #define SECONDS_TO_MILLISECONDS   (1000)
-#define MINUTES_TO_SECONDS        (60)
 
 void wakeup_set_timer(int seconds);
 void wakeup_stop_timer(void);
+BOOL wakeup_enable_hotkeys(void);
 
 #define H_WAKEUP_H
 #endif
