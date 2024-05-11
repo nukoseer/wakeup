@@ -9,10 +9,10 @@
 
 #define ID_START          (0)
 #define ID_STOP           (1)
-#define ID_REFRESH        (2)
-#define ID_CANCEL         (3)
+#define ID_CANCEL         (2)
+#define ID_REFRESH        (99)
 
-#define ID_WINDOW        (100)
+#define ID_WINDOW         (100)
 #define ID_PERIOD         (200)
 #define ID_SHORTCUT_MENU  (300)
 
@@ -170,8 +170,6 @@ static LRESULT CALLBACK wakeup_dialog__proc(HWND window, UINT message, WPARAM wp
     else if (message == WM_COMMAND)
 	{
         int control = LOWORD(wparam);
-        int value = HIWORD(wparam);
-        (void)value;
 
 		if (control == ID_START)
         {
