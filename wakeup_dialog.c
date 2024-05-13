@@ -497,7 +497,7 @@ void wakeup_dialog_init(WakeupDialogConfig* dialog_config, WCHAR* ini_path, HICO
     global_ini_path = ini_path;
     global_icon = icon;
 
-    dialog_config->menu_shortcut = (DWORD)HOT_KEY('W', MOD_ALT);
+    dialog_config->menu_shortcut = (DWORD)HOT_KEY('U', MOD_ALT | MOD_CONTROL);
     wakeup_enable_hotkeys();
 
     wakeup_dialog_show(dialog_config);
